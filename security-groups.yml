@@ -1,0 +1,136 @@
+Description: >
+    This template creates the security groups required by our entire stack.
+    We create them in a seperate nested template, so they can be referenced
+    by all of the other nested templates.
+
+Parameters:
+  StackName:
+    Description: An environment name that will be prefixed to resource names
+    Type: String
+  EnvironmentName:
+    Description: Environment Name
+    Type: String
+  VPCCIDR:
+    Description: Please specify VPC CIDR block.
+    Type: String
+  VPC:
+    Description: Choose which VPC the security groups should be deployed to
+    Type: AWS::EC2::VPC::Id
+
+Resources:
+  ExternalLBSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupName: !Sub "${EnvironmentName}-ExternalLB-SG"
+      GroupDescription: "Allows HTTP, HTTPS access"
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: "tcp"
+          FromPort: "80"
+          ToPort: "80"
+          CidrIp: "0.0.0.0/0"
+        - IpProtocol: "tcp"
+          FromPort: "443"
+          ToPort: "443"
+          CidrIp: "0.0.0.0/0"
+        - IpProtocol: "tcp"
+          FromPort: "80"
+          ToPort: "80"
+          CidrIp: "0.0.0.0/0"
+      SecurityGroupEgress:
+        - IpProtocol: "tcp"
+          FromPort: "80"
+          ToPort: "80"
+          CidrIp: "0.0.0.0/0"
+        - IpProtocol: "tcp"
+          FromPort: "443"
+          ToPort: "443"
+          CidrIp: "0.0.0.0/0"
+        - IpProtocol: "tcp"
+          FromPort: "80"
+          ToPort: "80"
+          CidrIp: !Ref VPCCIDR
+
+  WebTierSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupName: !Sub "${EnvironmentName}-WebTier-SG"
+      GroupDescription: "Allows SSH, HTTP access"
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: "tcp"
+          FromPort: "80"
+          ToPort: "80"
+          SourceSecurityGroupId: !Ref ExternalLBSecurityGroup
+        - IpProtocol: "tcp"
+          FromPort: "22"
+          ToPort: "22"
+          CidrIp: "0.0.0.0/0"
+      SecurityGroupEgress:
+        - Description: "connect to API load balancer URL via port 80"
+          IpProtocol: "tcp"
+          FromPort: "80"
+          ToPort: "80"
+          CidrIp: !Ref VPCCIDR
+        - Description: "connect to API Load balancer URL via port 443"
+          IpProtocol: "tcp"
+          FromPort: "443"
+          ToPort: "443"
+          CidrIp: !Ref VPCCIDR                 
+        - IpProtocol: "-1"
+          CidrIp: "0.0.0.0/0"  
+
+  AppTierSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupName: !Sub "${EnvironmentName}-AppTier-SG"
+      GroupDescription: "Allows SSH, HTTP, HTTPS access"
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: "tcp"
+          FromPort: "80"
+          ToPort: "80"
+          CidrIp: !Ref VPCCIDR
+        - IpProtocol: "tcp"
+          FromPort: "443"
+          ToPort: "443"
+          CidrIp: !Ref VPCCIDR
+        - IpProtocol: "tcp"
+          FromPort: "22"
+          ToPort: "22"
+          CidrIp: "0.0.0.0/0"
+      SecurityGroupEgress:
+        - IpProtocol: "tcp"
+          FromPort: "80"
+          ToPort: "80"
+          CidrIp: !Ref VPCCIDR
+        - IpProtocol: "tcp"
+          FromPort: "443"
+          ToPort: "443"
+          CidrIp: !Ref VPCCIDR
+        - Description: "Allows instances in AS SG to communicate to the internet"
+          IpProtocol: "tcp"
+          FromPort: "0"
+          ToPort: "65535"
+          CidrIp: "0.0.0.0/0" 
+  # Define a separate SG Ingress resource to avoid circular dependency
+  AppTierSecurityGroupIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Allow all hosts in this group to access each other
+      GroupId: !Ref AppTierSecurityGroup
+      IpProtocol: "tcp"
+      FromPort: "0"
+      ToPort: "65535"
+      SourceSecurityGroupId: !Ref AppTierSecurityGroup
+      
+  # Define a separate SG Egress resource to avoid circular dependency
+  AppTierSecurityGroupEgress:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      Description: Allow all hosts in this group to access each other
+      GroupId: !Ref AppTierSecurityGroup
+      IpProtocol: "tcp"
+      FromPort: "0"
+      ToPort: "65535"
+      SourceSecurityGroupId: !Ref AppTierSecurityGroup

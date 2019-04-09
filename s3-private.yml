@@ -1,0 +1,45 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Metadata: 
+  License: Apache-2.0
+Description: >-
+  This template creates a private S3 bucket with a bucket policy that restricts access to a specific VPC and
+  IAM prncipals. 
+
+Parameters:
+  StackName:
+    Description: An environment name that will be prefixed to resource names
+    Type: String
+  EnvironmentName:
+    Description: Environment Name
+    Type: String
+  S3BucketName:
+    Type: String
+    Description: The name of the S3 bucket
+  NumberOfDaysIncompleteMultipartUpload:
+    Type: Number
+    Description: The number of days after which incomplete multipart uploads are aborted.
+    Default: 7
+
+Resources:
+  # Specifying the S3 bucket
+  S3PrivateBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName:
+        Ref: S3BucketName
+      AccessControl: Private
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: MultipartUploadLifecycleRule
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: !Ref NumberOfDaysIncompleteMultipartUpload
+      VersioningConfiguration:
+        Status: Enabled

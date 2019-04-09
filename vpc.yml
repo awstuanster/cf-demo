@@ -1,0 +1,413 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: >-
+  This template deploys a VPC, with a pair of public, private subnets spread 
+  across two Availabilty Zones. It deploys an Internet Gateway, with a default 
+  route on the public subnets. It deploys a pair of NAT Gateways (one in each AZ), 
+  and default routes for them in the private subnets.
+
+Parameters:
+  StackName:
+    Description: An environment name that will be prefixed to resource names
+    Type: String
+  EnvironmentName:
+    Description: Environment Name
+    Type: String
+  VPCCIDR:
+    Description: Please specify VPC CIDR block.
+    Type: String
+  PublicSubnet1CIDR:
+    Description: Please specify Public Subnet 1 CIDR block.
+    Type: String
+  PublicSubnet2CIDR:
+    Description: Please specify Public Subnet 2 CIDR block.
+    Type: String
+  PrivateSubnet1CIDR:
+    Description: Please specify Private Subnet 1 CIDR block.
+    Type: String
+  PrivateSubnet2CIDR:
+    Description: Please specify Private Subnet 2 CIDR block.
+    Type: String
+
+Resources:
+  VPC:
+    Type: "AWS::EC2::VPC"
+    Properties:
+      EnableDnsSupport: "true"
+      EnableDnsHostnames: "true"
+      CidrBlock: !Ref VPCCIDR
+      Tags:
+        - Key: "Application"
+          Value: !Ref StackName
+        - Key: "Network"
+          Value: "Public"
+        - Key: "CostCenter"
+          Value: "Operations"
+        - Key: "Name"
+          Value: !Sub '${EnvironmentName}-VPC-${VPCCIDR}'
+
+  InternetGateway:
+    Type: "AWS::EC2::InternetGateway"
+    Properties:
+      Tags:
+        - Key: "Application"
+          Value: !Ref StackName
+        - Key: "Network"
+          Value: "Public"
+        - Key: "Name"
+          Value: !Sub '${EnvironmentName}-IGW'
+
+  GatewayToInternet:
+    Type: "AWS::EC2::VPCGatewayAttachment"
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnet1: 
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 0, !GetAZs ]
+      CidrBlock: !Ref PublicSubnet1CIDR
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: "Application"
+          Value: !Ref StackName
+        - Key: "Network"
+          Value: "Public"
+        - Key: "Name"
+          Value: !Sub '${EnvironmentName}-Public Subnet (AZ1)'
+
+  PublicSubnet2: 
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 1, !GetAZs ]
+      CidrBlock: !Ref PublicSubnet2CIDR
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: "Application"
+          Value: !Ref StackName
+        - Key: "Network"
+          Value: "Public"
+        - Key: "Name"
+          Value: !Sub '${EnvironmentName}-Public Subnet (AZ2)'
+
+  PrivateSubnet1: 
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 0, !GetAZs ]
+      CidrBlock: !Ref PrivateSubnet1CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: "Application"
+          Value: !Ref StackName
+        - Key: "Network"
+          Value: "Private"
+        - Key: "Name"
+          Value: !Sub '${EnvironmentName}-Private Subnet (AZ1)'
+
+  PrivateSubnet2: 
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 1, !GetAZs ]
+      CidrBlock: !Ref PrivateSubnet2CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: "Application"
+          Value: !Ref StackName
+        - Key: "Network"
+          Value: "Private"
+        - Key: "Name"
+          Value: !Sub '${EnvironmentName}-Private Subnet (AZ2)'
+
+  ###############################
+  # NETWORK ACL
+  ###############################
+  PrivateNetworkAcl:
+    Type: "AWS::EC2::NetworkAcl"
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: "Application"
+          Value: !Ref StackName
+        - Key: "Network"
+          Value: "Public"
+        - Key: "Name"
+          Value: !Sub '${EnvironmentName}-Private NACL'
+
+  ####### INBOUND HTTP Network ACL RULES #######
+  InboundHTTPPrivateNetworkAclEntry:
+    Type: "AWS::EC2::NetworkAclEntry"
+    Properties:
+      NetworkAclId: !Ref PrivateNetworkAcl
+      RuleNumber: "100"
+      Protocol: "6"
+      RuleAction: "allow"
+      Egress: "false"
+      CidrBlock: !Ref VPCCIDR
+      PortRange:
+        From: "80"
+        To: "80"
+
+  ####### INBOUND HTTPS Network ACL RULES #######
+  InboundHTTPSPrivateNetworkAclEntry:
+    Type: "AWS::EC2::NetworkAclEntry"
+    Properties:
+      NetworkAclId: !Ref PrivateNetworkAcl
+      RuleNumber: "110"
+      Protocol: "6"
+      RuleAction: "allow"
+      Egress: "false"
+      CidrBlock: !Ref VPCCIDR
+      PortRange:
+        From: "443"
+        To: "443"
+
+  ####### INBOUND SSH Network ACL RULES #######
+  InboundSSHPrivateNetworkAclEntry:
+    Type: "AWS::EC2::NetworkAclEntry"
+    Properties:
+      NetworkAclId: !Ref PrivateNetworkAcl
+      RuleNumber: "140"
+      Protocol: "6"
+      RuleAction: "allow"
+      Egress: "false"
+      CidrBlock: "0.0.0.0/0"
+      PortRange:
+        From: '22'
+        To: '22'
+
+  ####### INBOUND CUSTOM TCP Network ACL RULES #######
+  InboundCustomTCPPrivateNetworkAclEntry:
+    Type: "AWS::EC2::NetworkAclEntry"
+    Properties:
+      NetworkAclId: !Ref PrivateNetworkAcl
+      RuleNumber: "170"
+      Protocol: "6"
+      RuleAction: "allow"
+      Egress: "false"
+      CidrBlock: "0.0.0.0/0"
+      PortRange:
+        From: "1024"
+        To: "65535"
+
+  ####### INBOUND ICMP Network ACL RULES #######
+  InboundICMPPrivateNetworkAclEntry:
+    Type: "AWS::EC2::NetworkAclEntry"
+    Properties:
+      NetworkAclId: !Ref PrivateNetworkAcl
+      RuleNumber: "180"
+      Protocol: "1"
+      RuleAction: "allow"
+      Egress: "false"
+      CidrBlock: "0.0.0.0/0"
+      Icmp:
+        Code: "-1"
+        Type: "0"
+
+  OutboundPrivateNetworkAclEntry:
+    Type: "AWS::EC2::NetworkAclEntry"
+    Properties:
+      NetworkAclId: !Ref PrivateNetworkAcl
+      RuleNumber: "100"
+      Protocol: "6"
+      RuleAction: "allow"
+      Egress: "true"
+      CidrBlock: "0.0.0.0/0"
+      PortRange:
+        From: "0"
+        To: "65535"
+
+  PrivateSubnetNetworkAclAssociation1:
+    Type: "AWS::EC2::SubnetNetworkAclAssociation"
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      NetworkAclId: !Ref PrivateNetworkAcl
+
+  PrivateSubnetNetworkAclAssociation2:
+    Type: "AWS::EC2::SubnetNetworkAclAssociation"
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      NetworkAclId: !Ref PrivateNetworkAcl
+
+  ###############################
+  # ELASTIC IPs: no tag support 
+  ###############################
+  NATGatewayEIP1:
+    Type: "AWS::EC2::EIP"
+    DependsOn: GatewayToInternet
+    Properties:
+      Domain: "vpc"
+
+  NATGatewayEIP2:
+    Type: "AWS::EC2::EIP"
+    DependsOn: GatewayToInternet
+    Properties:
+      Domain: "vpc"
+
+  NATGateway1:
+    Type: "AWS::EC2::NatGateway"
+    Properties:
+      AllocationId:
+        Fn::GetAtt:
+          - "NATGatewayEIP1"
+          - "AllocationId"
+      SubnetId: !Ref PublicSubnet1
+      Tags:
+        - Key: "Application"
+          Value: !Ref StackName
+        - Key: "Network"
+          Value: "Public"
+        - Key: "Name"
+          Value: !Sub '${EnvironmentName}-NAT GW 1'
+
+  NATGateway2:
+    Type: "AWS::EC2::NatGateway"
+    Properties:
+      AllocationId:
+        Fn::GetAtt:
+          - "NATGatewayEIP2"
+          - "AllocationId"
+      SubnetId: !Ref PublicSubnet2
+      Tags:
+        - Key: "Application"
+          Value: !Ref StackName
+        - Key: "Network"
+          Value: "Public"
+        - Key: "Name"
+          Value: !Sub '${EnvironmentName}-NAT GW 2'
+
+  ###############################
+  # ROUTE TABLES
+  ###############################
+  PublicRouteTable:
+    Type: "AWS::EC2::RouteTable"
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: "Application"
+          Value: !Ref StackName
+        - Key: "Network"
+          Value: "Public"
+        - Key: "Name"
+          Value: !Sub '${EnvironmentName}-Public RT'
+
+  PublicRoute:
+    Type: "AWS::EC2::Route"
+    DependsOn: "GatewayToInternet"
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: "0.0.0.0/0"
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnetRouteTableAssociation1:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnetRouteTableAssociation2:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  PrivateRouteTable1:
+    Type: "AWS::EC2::RouteTable"
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: "Application"
+          Value: !Ref StackName
+        - Key: "Network"
+          Value: "Private"
+        - Key: "Name"
+          Value: !Sub '${EnvironmentName}-Private RT 1'
+
+  PrivateRouteTable2:
+    Type: "AWS::EC2::RouteTable"
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: "Application"
+          Value: !Ref StackName
+        - Key: "Network"
+          Value: "Private"
+        - Key: "Name"
+          Value: !Sub '${EnvironmentName}-Private RT 2'
+
+  PrivateRouteToInternet1:
+    Type: "AWS::EC2::Route"
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      DestinationCidrBlock: "0.0.0.0/0"
+      NatGatewayId: !Ref NATGateway1
+
+  PrivateRouteToInternet2:
+    Type: "AWS::EC2::Route"
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      DestinationCidrBlock: "0.0.0.0/0"
+      NatGatewayId: !Ref NATGateway2
+
+  PrivateSubnetRouteTableAssociation1:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTable1
+
+  PrivateSubnetRouteTableAssociation2:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable2
+
+  EndpointS3:
+    Type: 'AWS::EC2::VPCEndpoint'
+    Properties:
+        RouteTableIds:
+        - !Ref PrivateRouteTable1
+        - !Ref PrivateRouteTable2
+        ServiceName: !Sub 'com.amazonaws.${AWS::Region}.s3'
+        VpcId: !Ref VPC
+
+  EndpointDynamoDb:
+    Type: 'AWS::EC2::VPCEndpoint'
+    Properties:
+        RouteTableIds:
+        - !Ref PrivateRouteTable1
+        - !Ref PrivateRouteTable2
+        ServiceName: !Sub 'com.amazonaws.${AWS::Region}.dynamodb'
+        VpcId: !Ref VPC
+
+Outputs:
+  VPC:
+    Description: "VPCId of VPC"
+    Value: !Ref VPC
+
+  InternetGateway:
+    Description: A reference to the created InternetGateway
+    Value: !Ref InternetGateway
+
+  PublicSubnets:
+    Description: A list of the public subnets
+    Value: !Sub "${PublicSubnet1},${PublicSubnet2}"      
+
+  PrivateSubnets:
+    Description: A list of the private subnets
+    Value: !Sub "${PrivateSubnet1},${PrivateSubnet2}"    
+
+  RouteTableIds:
+    Description: "A list of Route Table Ids to be used in creating VPC endpoint"
+    Value: !Sub "${PublicRouteTable},${PrivateRouteTable1},${PrivateRouteTable2}"
+
+  NATGatewayEIP1: 
+    Description: A reference NatGatewayEIP1
+    Value: !Ref NATGatewayEIP1
+  
+  NATGatewayEIP2: 
+    Description: A reference NatGatewayEIP2
+    Value: !Ref NATGatewayEIP2

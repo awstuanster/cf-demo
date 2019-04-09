@@ -1,0 +1,56 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Metadata: 
+  License: Apache-2.0
+Description: >
+  Master Template that calls all other templates
+
+Parameters:
+  EnvironmentName:
+    Description: Environment Name
+    Type: String
+    Default: qa
+
+  BaseTemplateUrl:
+    Description: Default URL where the CloudFormation Templates are placed
+    Type: String
+    Default: 'https://s3.amazonaws.com/vcs-demo-us-east-1/baseline'
+
+  Version:
+    Description: Build Version which should be passed in from shell script
+    Type: String
+    Default: 999
+
+Resources:
+  VPC:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub "${BaseTemplateUrl}/${Version}/vpc.yml"
+      Parameters:
+        StackName: !Ref 'AWS::StackName'
+        EnvironmentName: !Ref EnvironmentName
+        VPCCIDR: 10.50.0.0/16
+        PublicSubnet1CIDR: 10.50.0.0/24
+        PublicSubnet2CIDR: 10.50.1.0/24
+        PrivateSubnet1CIDR: 10.50.2.0/24
+        PrivateSubnet2CIDR: 10.50.3.0/24
+
+  SecurityGroups:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub "${BaseTemplateUrl}/${Version}/security-groups.yml"
+      Parameters:
+        StackName: !Ref 'AWS::StackName'
+        EnvironmentName: !Ref EnvironmentName
+        VPCCIDR: 10.50.0.0/16
+        VPC: !GetAtt VPC.Outputs.VPC
+
+  S3PrivateBucket:
+    Type: 'AWS::CloudFormation::Stack'
+    Properties:
+      TemplateURL: !Sub "${BaseTemplateUrl}/${Version}/s3-private.yml"
+      Parameters:
+        StackName: !Ref 'AWS::StackName'
+        EnvironmentName: !Ref EnvironmentName
+        S3BucketName: s3private-vcs
+        NumberOfDaysIncompleteMultipartUpload: 7
+    
