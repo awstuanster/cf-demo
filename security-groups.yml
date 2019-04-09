@@ -2,7 +2,7 @@ Description: >
     This template creates the security groups required by our entire stack.
     We create them in a seperate nested template, so they can be referenced
     by all of the other nested templates.
-
+ 
 Parameters:
   StackName:
     Description: An environment name that will be prefixed to resource names
